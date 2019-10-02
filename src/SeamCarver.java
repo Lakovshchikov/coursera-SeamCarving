@@ -6,6 +6,7 @@ public class SeamCarver {
 
     private Picture picture;
     private double[][] matrix;
+    final private double weightBorder = 10000;
 
     public SeamCarver(Picture picture) {
         if (picture == null) {
@@ -15,7 +16,7 @@ public class SeamCarver {
         this.matrix = new double[picture.width()][picture.height()];
         for(int i = 0; i < picture.width(); i++) {
             for (int j = 0; j < picture.height(); j++) {
-                this.matrix[i][j] = energy(i,j);
+                this.matrix[i][j] = cachingEnergy(i,j);
             }
         }
     }
@@ -36,63 +37,46 @@ public class SeamCarver {
         if (x < 0 || y < 0 || x > picture.width() - 1 || y > picture.height() - 1) {
             throw new IllegalArgumentException();
         }
-        if (x == 0 || y == 0 || x == picture.width() - 1 || y == picture.height() - 1) {
-            return 1000;
-        }
-        return Math.sqrt(gradX(x,y) + gradY(x,y));
+        return matrix[x][y];
     }
 
     public int[] findHorizontalSeam() {
         if (picture.height() <= 1) {
             throw new IllegalArgumentException();
         }
-        int height = picture.height();
-        int width = picture.width();
-        boolean[][] marked = new boolean[height][width];
-        int[] result = new int[width];
-        double minWeight = Double.POSITIVE_INFINITY;
-        ST<Integer,int[]> indexes = new ST<Integer,int[]>();
-        int[][] keys = new int[height][width];
-        int maxV = V();
-        Bag<Integer>[] adj = (Bag<Integer>[]) new Bag[maxV];
-        for (int v = 0; v < maxV; v++) {
-            adj[v] = new Bag<Integer>();
-        }
-        Queue<Integer> pixels = new Queue<Integer>();
-        int currentIndex = 0;
-        for (int row = 1; row < height; row+=2) {
-            int[] point = new int[2];
-            point[0] = row;
-            point[1] = 0;
-            marked[row][0] = true;
-            keys[0][1] = currentIndex;
-            indexes.put(currentIndex, point);
-            pixels.enqueue(currentIndex);
-            currentIndex++;
-            while (!pixels.isEmpty()) {
-                point = indexes.get(pixels.dequeue());
-                currentIndex = addAdj(point[0], point[1], indexes, adj, pixels, currentIndex, marked, keys);
-            }
-            int count = indexes.size();
-            Digraph G = new Digraph(count);
-            for (int i = 0; i < count; i++) {
-                for(Integer e : adj[i]) {
-                    G.addEdge(i, e);
-                }
-            }
-            Topological top = new Topological(G);
-            Iterable<Integer> order = top.order();
+        int[] result = new int[width()];
+        double minDistance = Double.POSITIVE_INFINITY;
+        int lastPoint = -1;
 
-            int[] edgeTo = new int[count*3];
-            double[] distTo = new double[count*3];
-            for (int i = 0; i < distTo.length; i++){
-                distTo[i] = Double.POSITIVE_INFINITY;
-            }
+        int[] edgeTo = new int[width() * height()];
+        double[] distTo = new double[width() * height()];
 
-//            for (int i : order){
-//                relax(edgeTo, distTo, adj[i], i);
-//            };
+        for (int row = 0; row < height(); row++){
+            for(int col = 0; col < width(); col++) {
+                int point = indexPoint(row, col);
+                edgeTo[point] = -1;
+                distTo[point] = Double.POSITIVE_INFINITY;
+            }
         }
+
+        for (int row = 1; row < height() - 1; row++){
+            for (int col = 0; col < width() - 1; col++) {
+                relax(row, col, edgeTo, distTo);
+            }
+        }
+
+        for (int row = 1; row < height() - 1; row++) {
+            if (minDistance > distTo[indexPoint(row, width() - 1)]) {
+                minDistance = distTo[indexPoint(row, width() - 1)];
+                lastPoint = indexPoint(row, width() - 1);
+            }
+        }
+
+        for(int i = result.length - 1; i > 0; i--) {
+            result[i] = edgeTo[lastPoint];
+            lastPoint = edgeTo[lastPoint];
+        }
+
         return result;
     }
 
@@ -131,6 +115,17 @@ public class SeamCarver {
         }
     }
 
+
+    private double cachingEnergy(int x, int y) {
+        if (x < 0 || y < 0 || x > picture.width() - 1 || y > picture.height() - 1) {
+            throw new IllegalArgumentException();
+        }
+        if (x == 0 || y == 0 || x == picture.width() - 1 || y == picture.height() - 1) {
+            return weightBorder;
+        }
+        return Math.sqrt(gradX(x,y) + gradY(x,y));
+    }
+
     private double gradX(int x, int y) {
         double result = 0;
 
@@ -157,76 +152,16 @@ public class SeamCarver {
         return result;
     }
 
-    private int addAdj(int row, int col, ST<Integer,int[]> indexes, Bag<Integer>[] adj, Queue<Integer> pixels, int currentIndex, boolean[][] marked, int[][] keys ) {
-        int height = picture.height();
-        int width = picture.width();
-        int parentIndex = keys[row][col];
-        if (col + 1 < width) {
-            if (row - 1 > 0) {
-                int[] point = new int[2];
-                point[0] = row + 1;
-                point[1] = col + 1;
-                if (!marked[row - 1][col + 1]) {
-                    indexes.put(currentIndex, point);
-                    adj[parentIndex].add(currentIndex);
-                    pixels.enqueue(currentIndex);
-                    keys[row - 1][col + 1] = currentIndex;
-                    marked[row - 1][col + 1] = true;
-                    currentIndex++;
-                } else {
-                    adj[parentIndex].add(keys[row - 1][col + 1]);
-                }
-            }
-            int[] point = new int[2];
-            point[0] = row;
-            point[1] = col + 1;
-            if (!marked[row][col + 1]) {
-                indexes.put(currentIndex, point);
-                adj[parentIndex].add(currentIndex);
-                pixels.enqueue(currentIndex);
-                keys[row][col + 1] = currentIndex;
-                marked[row][col + 1] = true;
-                currentIndex++;
-            } else {
-                adj[parentIndex].add(keys[row][col + 1]);
-            }
-            if(row + 1 < height && !marked[row + 1][col + 1]) {
-                point = new int[2];
-                point[0] = row + 1;
-                point[1] = col + 1;
-                if (!marked[row + 1][col + 1]) {
-                    indexes.put(currentIndex, point);
-                    adj[parentIndex].add(currentIndex);
-                    pixels.enqueue(currentIndex);
-                    keys[row + 1][col + 1] = currentIndex;
-                    marked[row + 1][col + 1] = true;
-                    currentIndex++;
-                } else {
-                    adj[parentIndex].add(keys[row + 1][col + 1]);
-                }
-            }
+    private void relax(int row, int col, int[] edgeTo, double[] distTo) {
+        int point = indexPoint(row, col);
+        if (distTo[point] < distTo[point] + matrix[row][col]) {
+            distTo[point] = distTo[point] + matrix[row][col];
+            edgeTo[point] = point;
         }
-        return currentIndex;
     }
 
-    private int V(){
-        int v = 1;
-        int prev = 1;
-        for (int i = 0; i < 1000 - 1; i++) {
-            if (prev < 1000) {
-                prev = prev + 2;
-                v += prev;
-            } else {
-                v += 1000;
-            }
-        }
-        return v;
-    }
-
-    private void relax(int[] edgeTo, double[] distTo, Bag<Integer> adj, int e) {
-        for (int i : adj) {
-
-        }
+    private int indexPoint(int row, int col) {
+        return row * width() + col;
     }
 
     public static void main(String[] args) {
