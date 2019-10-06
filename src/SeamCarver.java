@@ -1,4 +1,5 @@
-import edu.princeton.cs.algs4.*;
+import edu.princeton.cs.algs4.Picture;
+
 
 import java.awt.Color;
 
@@ -6,7 +7,7 @@ public class SeamCarver {
 
     private Picture picture;
     private double[][] matrix;
-    final private double weightBorder = 10000;
+    final private double weightBorder = 1000;
 
     public SeamCarver(Picture picture) {
         if (picture == null) {
@@ -14,9 +15,9 @@ public class SeamCarver {
         }
         this.picture = picture;
         this.matrix = new double[picture.width()][picture.height()];
-        for(int i = 0; i < picture.width(); i++) {
-            for (int j = 0; j < picture.height(); j++) {
-                this.matrix[i][j] = cachingEnergy(i,j);
+        for(int col = 0; col < picture.width(); col++) {
+            for (int row = 0; row < picture.height(); row++) {
+                this.matrix[col][row] = cachingEnergy(col,row);
             }
         }
     }
@@ -41,30 +42,53 @@ public class SeamCarver {
     }
 
     public int[] findHorizontalSeam() {
-        if (picture.height() <= 1) {
-            throw new IllegalArgumentException();
-        }
         int[] result = new int[width()];
+
+        if(height() == 1) {
+            for (int i = width() - 1; i >= 0; i--) {
+                result[i] = 0;
+            }
+            return result;
+        }
+
         double minDistance = Double.POSITIVE_INFINITY;
         int lastPoint = -1;
 
         int[] edgeTo = new int[width() * height()];
         double[] distTo = new double[width() * height()];
 
-        for (int row = 0; row < height(); row++){
-            for(int col = 0; col < width(); col++) {
+        //init
+        for(int col = 0; col < width(); col++){
+            for (int row = 0; row < height(); row++){
                 int point = indexPoint(row, col);
+                if (col == 0) {
+                    distTo[point] = 0;
+                } else {
+                    distTo[point] = Double.POSITIVE_INFINITY;
+                }
                 edgeTo[point] = -1;
-                distTo[point] = Double.POSITIVE_INFINITY;
             }
         }
 
-        for (int row = 1; row < height() - 1; row++){
-            for (int col = 0; col < width() - 1; col++) {
-                relax(row, col, edgeTo, distTo);
+        //relax
+        for (int col = 0; col < width() - 1; col++){
+            for(int row = 0; row < height(); row++) {
+                int pointFrom = indexPoint(row, col);
+                int pointTo = 0;
+                if (row + 1 < height()){
+                    pointTo = indexPoint(row + 1, col + 1);
+                    relax(pointFrom, pointTo, edgeTo, distTo);
+                }
+                if (row - 1 >= 0) {
+                    pointTo = indexPoint(row - 1, col + 1);
+                    relax(pointFrom, pointTo, edgeTo, distTo);
+                }
+                pointTo = indexPoint(row, col + 1);
+                relax(pointFrom, pointTo, edgeTo, distTo);
             }
         }
 
+        // the shortest path
         for (int row = 1; row < height() - 1; row++) {
             if (minDistance > distTo[indexPoint(row, width() - 1)]) {
                 minDistance = distTo[indexPoint(row, width() - 1)];
@@ -72,21 +96,73 @@ public class SeamCarver {
             }
         }
 
-        for(int i = result.length - 1; i > 0; i--) {
-            result[i] = edgeTo[lastPoint];
+        // seem
+        for(int i = result.length-1; i >= 0; i--) {
+            result[i] = rowPoint(lastPoint);
             lastPoint = edgeTo[lastPoint];
         }
 
         return result;
     }
 
-
-
     public int[] findVerticalSeam() {
-        int[] result = new int[picture.width()];
-        if (picture.width() <= 1) {
-            throw new IllegalArgumentException();
+        int[] result = new int[picture.height()];
+        if(width() == 1) {
+            for (int i = height() - 1; i >= 0; i--) {
+                result[i] = 0;
+            }
+            return result;
         }
+
+        int[] edgeTo = new int[width() * height()];
+        double[] distTo = new double[width() * height()];
+
+        for(int col = 0; col < width(); col++){
+            for (int row = 0; row < height(); row++){
+                int point = indexPoint(row, col);
+                if (row == 0) {
+                    distTo[point] = 0;
+                } else {
+                    distTo[point] = Double.POSITIVE_INFINITY;
+                }
+                edgeTo[point] = -1;
+            }
+        }
+
+        for (int row = 0; row < height() - 1; row++){
+            for(int col = 0; col < width() - 1; col++) {
+                int pointFrom = indexPoint(row, col);
+                int pointTo = 0;
+                if (col + 1 < width() - 1){
+                    pointTo = indexPoint(row + 1, col + 1);
+                    relax(pointFrom, pointTo, edgeTo, distTo);
+                }
+                if (col - 1 >= 0) {
+                    pointTo = indexPoint(row + 1, col - 1);
+                    relax(pointFrom, pointTo, edgeTo, distTo);
+                }
+                pointTo = indexPoint(row + 1, col);
+                relax(pointFrom, pointTo, edgeTo, distTo);
+            }
+        }
+
+        double minDistance = distTo[indexPoint(height() - 1, 0)];
+        int lastPoint = indexPoint(height() - 1, 0);
+
+        // the shortest path
+        for (int col = 0; col <= width() - 1; col++) {
+            if (minDistance > distTo[indexPoint(height() - 1, col)]) {
+                minDistance = distTo[indexPoint(height() - 1, col)];
+                lastPoint = indexPoint(height() - 1, col);
+            }
+        }
+
+        // seem
+        for(int i = result.length-1; i >= 0; i--) {
+            result[i] = colPoint(lastPoint, rowPoint(lastPoint));
+            lastPoint = edgeTo[lastPoint];
+        }
+
         return result;
     }
 
@@ -95,6 +171,23 @@ public class SeamCarver {
             throw new IllegalArgumentException();
         }
         checkSeem(seam, true);
+
+        Picture updatedPicture = new Picture(width(), height() - 1);
+        double[][] updatedMatrix = new double[width()][height() - 1];
+
+        for (int col = 0; col < width(); col++) {
+            for (int row = 0; row < seam[col]; row++) {
+                updatedPicture.set(col, row, picture.get(col, row));
+                updatedMatrix[col][row] = matrix[col][row];
+            }
+            for (int row = seam[col]; row < height() - 1; row++) {
+                updatedPicture.set(col, row, picture.get(col, row + 1));
+                updatedMatrix[col][row] = matrix[col][row + 1];
+            }
+        }
+
+        picture = updatedPicture;
+        matrix = updatedMatrix;
     }
 
     public void removeVerticalSeam(int[] seam) {
@@ -102,7 +195,26 @@ public class SeamCarver {
             throw new IllegalArgumentException();
         }
         checkSeem(seam, false);
+
+        Picture updatedPicture = new Picture(width() - 1, height());
+        double[][] updatedMatrix = new double[width() - 1][height()];
+
+        for (int row = 0; row < height(); row++) {
+            for (int col = 0; col < seam[row]; col++) {
+                updatedPicture.set(col, row, picture.get(col, row));
+                updatedMatrix[col][row] = matrix[col][row];
+            }
+            for (int col = seam[row]; col < width() - 1; col++) {
+                updatedPicture.set(col, row, picture.get(col + 1, row));
+                updatedMatrix[col][row] = matrix[col + 1][row];
+            }
+        }
+
+        picture = updatedPicture;
+        matrix = updatedMatrix;
     }
+
+
 
     private void checkSeem(int[] seem, boolean horizontal) {
         if ( (horizontal && (seem.length != picture.width())) || !horizontal && (seem.length != picture.height())){
@@ -114,7 +226,6 @@ public class SeamCarver {
             }
         }
     }
-
 
     private double cachingEnergy(int x, int y) {
         if (x < 0 || y < 0 || x > picture.width() - 1 || y > picture.height() - 1) {
@@ -152,11 +263,12 @@ public class SeamCarver {
         return result;
     }
 
-    private void relax(int row, int col, int[] edgeTo, double[] distTo) {
-        int point = indexPoint(row, col);
-        if (distTo[point] < distTo[point] + matrix[row][col]) {
-            distTo[point] = distTo[point] + matrix[row][col];
-            edgeTo[point] = point;
+    private void relax(int pointFrom, int pointTo, int[] edgeTo, double[] distTo) {
+        int row = rowPoint(pointTo);
+        int col = colPoint(pointTo, row);
+        if (distTo[pointFrom] + matrix[col][row] < distTo[pointTo]) {
+            distTo[pointTo] = distTo[pointFrom] + matrix[col][row];
+            edgeTo[pointTo] = pointFrom;
         }
     }
 
@@ -164,24 +276,19 @@ public class SeamCarver {
         return row * width() + col;
     }
 
+    private int colPoint(int point, int row) {
+        return point - row * width();
+    }
+
+    private int rowPoint(int point) {
+        return point / width();
+    }
+
     public static void main(String[] args) {
-//        In in = new In(args[0]);
         Picture pic = new Picture(args[0]);
         SeamCarver sc = new SeamCarver(pic);
-        sc.findHorizontalSeam();
-//        Digraph G = new Digraph(in);
-//        Topological top = new Topological(G);
-//        Out out = new Out();
-//        for(int i : top.order()) {
-//            out.print(i);
-//            out.print(" ");
-//        }
-//
-//        int i = 1;
-//        for (int j = 0; j < 1000; j++) {
-//            i = i + 2;
-//        }
-//        out.print(i);
+        int[] arr = { 0, 1, 1, 1, 1, 1, 0 };
+        sc.removeVerticalSeam(arr);
     }
 
 }
